@@ -1,30 +1,36 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Papa from 'papaparse';
 import { useRive, Layout, Fit, Alignment } from '@rive-app/react-webgl2';
 
 const SCENARIO_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRN7Bn-OFwwB_FiFhDCdqGi5GOG7CpFI9NtRbW8nl3OUV73MwNR2tFTqUg03mj_Pw/pub?gid=1742593725&single=true&output=csv';
 const RESPONSE_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRN7Bn-OFwwB_FiFhDCdqGi5GOG7CpFI9NtRbW8nl3OUV73MwNR2tFTqUg03mj_Pw/pub?gid=1670179409&single=true&output=csv';
+const MAIN_MENU_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRN7Bn-OFwwB_FiFhDCdqGi5GOG7CpFI9NtRbW8nl3OUV73MwNR2tFTqUg03mj_Pw/pub?gid=19702636&single=true&output=csv';
+const TUTORIAL_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRN7Bn-OFwwB_FiFhDCdqGi5GOG7CpFI9NtRbW8nl3OUV73MwNR2tFTqUg03mj_Pw/pub?gid=402147878&single=true&output=csv';
+const SCORE_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRN7Bn-OFwwB_FiFhDCdqGi5GOG7CpFI9NtRbW8nl3OUV73MwNR2tFTqUg03mj_Pw/pub?gid=279755321&single=true&output=csv';
 
 // --- SOUND EFFECTS (SFX) CONFIGURATION ---
-// Easily swap these URLs with any direct link to an mp3 or wav file!
 const SFX_URLS = {
-  hover: 'https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3',     // Subtle UI tick
-  click: 'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3',     // Solid button press
-  popup: 'https://assets.mixkit.co/active_storage/sfx/2997/2997-preview.mp3',     // Swoosh for speech bubbles
-  success: 'https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3',   // Positive chime for points
-  fail: 'https://assets.mixkit.co/active_storage/sfx/2955/2955-preview.mp3',      // Error buzz for losing points
-  complete: 'https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3'   // Fanfare for end screen
+  hover: 'https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3',     
+  click: 'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3',     
+  popup: 'https://assets.mixkit.co/active_storage/sfx/2997/2997-preview.mp3',     
+  success: 'https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3',   
+  fail: 'https://assets.mixkit.co/active_storage/sfx/2955/2955-preview.mp3',      
+  complete: 'https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3'   
 };
 
+// 👇 NEW: Global mute flag for SFX
+let globalIsMuted = false; 
+
 const playSound = (type) => {
+  if (globalIsMuted) return; // 👇 NEW: Skip playing if muted
+  
   if (SFX_URLS[type]) {
     const audio = new Audio(SFX_URLS[type]);
-    audio.volume = 0.3; // Kept at 30% volume so it isn't deafening
+    audio.volume = 0.3; 
     audio.play().catch(e => console.log("Audio blocked by browser autoplay policy until interacted with."));
   }
 };
 
-// --- HELPER: Safely find keys even with hidden line breaks, typos, or trailing spaces ---
 const getFuzzyKey = (obj, targetKey) => {
   if (!obj) return undefined;
   const normalize = (str) => String(str).replace(/\s+/g, ' ').trim().toLowerCase();
@@ -38,96 +44,192 @@ const cleanCharName = (name) => {
   return String(name).replace(/\s*\([^)]*\)/gi, '').trim() || 'None';
 };
 
+// --- Map character names to their exact Rive Nested ViewModel names ---
+const NESTED_VM_MAP = {
+  'sophia': 'VM_sophia',
+  'marek': 'VM_Marek',
+  'lukas': 'VM_LUKAS',
+  'dominika': 'VM_dominika',
+  'emma': 'VM_EMMA',
+  'alessandro': 'VM_Alessandro'
+};
+
 // --- 1. MAIN MENU ---
-function MainMenu({ onStart }) {
-  // Simple state to hold the selected language for now
-  const [language, setLanguage] = useState('English');
+function MainMenu({ onStart, ui }) {
+  // Dynamically pull the languages from the CSV
+  const languagesArray = (ui['Languages'] || 'English').split(',').map(l => l.trim());
+  const [language, setLanguage] = useState(languagesArray[0] || 'English');
+
+  const { RiveComponent: LogoRive } = useRive({
+    src: `${import.meta.env.BASE_URL}logo.riv`, 
+    stateMachines: 'State Machine 1', 
+    autoplay: true,
+    autoBind: true,
+    layout: new Layout({ fit: Fit.Contain, alignment: Alignment.Center }) 
+  });
 
   return (
     <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffffff', color: '#333' }}>
-      <h1 style={{ fontSize: '3rem', marginBottom: '20px', textAlign: 'center', padding: '0 20px' }}>Trust Communication Ops - The Shift</h1>
       
-      {/* 👇 NEW: Language Selector Placeholder */}
-      <div style={{ marginBottom: '30px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
-        <label htmlFor="language-select" style={{ fontSize: '1.1rem', color: '#666' }}>Choose your language:</label>
+      <div style={{ width: '300px', height: '300px' }}>
+        <LogoRive />
+      </div>
+
+      <h1 style={{ fontSize: '3rem', marginBottom: '30px', textAlign: 'center', padding: '0 20px', lineHeight: '1.2' }}>
+        {ui['Title'] || 'Under Pressure: Lead the Shift'}
+      </h1>
+      
+      <div style={{ marginBottom: '40px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '15px' }}>
+        <label htmlFor="language-select" style={{ fontSize: '1.1rem', color: '#666' }}>{ui['Text'] || 'Choose your language:'}</label>
         <select 
           id="language-select"
           value={language} 
           onChange={(e) => setLanguage(e.target.value)}
           style={{ 
-            padding: '10px 15px', 
-            fontSize: '1.1rem', 
-            borderRadius: '8px', 
-            border: '2px solid #ddd', 
-            backgroundColor: '#f8f9fa', 
-            color: '#333',
-            cursor: 'pointer',
-            outline: 'none',
-            minWidth: '200px',
-            boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.1)'
+            padding: '10px 15px', fontSize: '1.1rem', borderRadius: '8px', 
+            border: '2px solid #ddd', backgroundColor: '#f8f9fa', color: '#333',
+            cursor: 'pointer', outline: 'none', minWidth: '200px'
           }}
         >
-          <option value="English">English</option>
-          <option value="Spanish">Español (Spanish)</option>
-          <option value="French">Français (French)</option>
-          <option value="German">Deutsch (German)</option>
-          <option value="Mandarin">中文 (Mandarin)</option>
+          {languagesArray.map(lang => (
+            <option key={lang} value={lang}>{lang}</option>
+          ))}
         </select>
       </div>
 
       <button 
         className="standard-button" 
-        onMouseEnter={() => playSound('hover')} // Assumes your playSound function is still active
+        onMouseEnter={() => playSound('hover')}
         onClick={() => { playSound('click'); onStart(); }} 
-        style={{ padding: '15px 40px', fontSize: '1.2rem', cursor: 'pointer', backgroundColor: '#ff9900', color: 'white', borderRadius: '8px', border: 'none', fontWeight: 'bold', boxShadow: '0 4px 6px rgba(0,0,0,0.2)' }}
+        style={{ padding: '15px 40px', fontSize: '1.2rem', cursor: 'pointer', backgroundColor: '#ff9900', color: 'white', borderRadius: '8px', border: 'none', fontWeight: 'bold' }}
       >
-        Start Game
+        {ui['Button Text'] || 'Start Game'}
       </button>
     </div>
   );
 }
 
 // --- 1.5 INSTRUCTIONS SCREEN ---
-function InstructionsScreen({ onBegin }) {
+function InstructionsScreen({ onBegin, ui }) {
   return (
-    <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffffff', color: '#333', padding: '20px', boxSizing: 'border-box' }}>
-      <div style={{ maxWidth: '600px', width: '100%', backgroundColor: '#f8f9fa', padding: '40px', borderRadius: '12px', boxShadow: '0 8px 16px rgba(0,0,0,0.1)' }}>
-        <h2 style={{ fontSize: '2.5rem', marginBottom: '20px', textAlign: 'center', color: '#ff9900' }}>How to Play</h2>
+    <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ff9900', color: '#333', padding: '10px', boxSizing: 'border-box' }}>
+      
+      <div style={{ maxWidth: '800px', width: '100%', maxHeight: '95vh', overflowY: 'auto', backgroundColor: '#ffffff', padding: 'clamp(20px, 4vh, 40px)', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
         
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', fontSize: '1.2rem', lineHeight: '1.5', marginBottom: '30px' }}>
-          <p style={{ margin: 0 }}><strong>🏢 The Setup:</strong> You will be given various workplace scenarios to read and understand.</p>
-          <p style={{ margin: 0 }}><strong>👆 Your Task:</strong> Choose the most appropriate response from 3 multiple-choice options.</p>
-          <p style={{ margin: 0 }}><strong>💯 Scoring:</strong> Depending on your choice, you will receive <strong>+50</strong>, <strong>0</strong>, or <strong>-20</strong> points.</p>
+        <h2 style={{ fontSize: 'clamp(1.8rem, 4vh, 2.5rem)', margin: '0 0 clamp(10px, 2vh, 20px) 0', textAlign: 'center', color: '#ff9900', flexShrink: 0 }}>
+          {ui['Title'] || 'Scoring Guide'}
+        </h2>
+        
+        <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'stretch', fontSize: 'clamp(0.85rem, 1.8vh, 1rem)', marginBottom: 'clamp(15px, 2vh, 25px)', flexShrink: 0, textAlign: 'center' }}>
+          
+          {/* Block 1 */}
+          {(ui['Points 1'] || ui['Text 1']) && (
+            <div style={{ flex: 1, padding: '0 15px', borderRight: '1px solid #ddd' }}>
+              {ui['Points 1'] && <h3 style={{ margin: '0 0 5px 0', fontSize: '1.2rem', color: '#333' }}>{ui['Points 1']}</h3>}
+              {ui['Text 1'] && <p style={{ margin: 0 }}>{ui['Text 1']}</p>}
+            </div>
+          )}
+
+          {/* Block 2 */}
+          {(ui['Points 2'] || ui['Text 2']) && (
+            <div style={{ flex: 1, padding: '0 15px', borderRight: '1px solid #ddd' }}>
+              {ui['Points 2'] && <h3 style={{ margin: '0 0 5px 0', fontSize: '1.2rem', color: '#333' }}>{ui['Points 2']}</h3>}
+              {ui['Text 2'] && <p style={{ margin: 0 }}>{ui['Text 2']}</p>}
+            </div>
+          )}
+
+          {/* Block 3 */}
+          {(ui['Points 3'] || ui['Points 4'] || ui['Text 3']) && (
+            <div style={{ flex: 1, padding: '0 15px' }}>
+              {(ui['Points 3'] || ui['Points 4']) && <h3 style={{ margin: '0 0 5px 0', fontSize: '1.2rem', color: '#333' }}>{ui['Points 3'] || ui['Points 4']}</h3>}
+              {ui['Text 3'] && <p style={{ margin: 0 }}>{ui['Text 3']}</p>}
+            </div>
+          )}
         </div>
 
-        <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '8px', border: '1px solid #ddd', marginBottom: '40px' }}>
-          <h3 style={{ margin: '0 0 15px 0', fontSize: '1.3rem', textAlign: 'center' }}>🏆 Final Score Key</h3>
-          <ul style={{ listStyleType: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '1.1rem' }}>
-            <li style={{ display: 'flex', justifyContent: 'space-between' }}><span>Below 0:</span> <strong style={{ color: '#d9534f' }}>Terrible</strong></li>
-            <li style={{ display: 'flex', justifyContent: 'space-between' }}><span>0 - 50:</span> <strong style={{ color: '#f0ad4e' }}>Poor</strong></li>
-            <li style={{ display: 'flex', justifyContent: 'space-between' }}><span>51 - 150:</span> <strong style={{ color: '#5bc0de' }}>Average</strong></li>
-            <li style={{ display: 'flex', justifyContent: 'space-between' }}><span>151 - 250:</span> <strong style={{ color: '#0275d8' }}>Great</strong></li>
-            <li style={{ display: 'flex', justifyContent: 'space-between' }}><span>Above 250:</span> <strong style={{ color: '#5cb85c' }}>Excellent</strong></li>
-          </ul>
+        {/* Extra 'Remember' text blocks centered below the columns */}
+        <div style={{ textAlign: 'center', marginBottom: 'clamp(15px, 2vh, 25px)' }}>
+          {ui['Text 4'] && (
+            <div style={{ marginTop: '10px' }}>
+              <p style={{ margin: 0, fontSize: '1.1rem' }}>{ui['Text 4']}</p>
+            </div>
+          )}
+          {ui['Key Text'] && (
+            <div style={{ marginTop: '10px' }}>
+              <p style={{ margin: 0, fontSize: '1.0rem' }}>{ui['Key Text']}</p>
+            </div>
+          )}
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'center' }}>
+        <div style={{ backgroundColor: '#fff', marginBottom: 'clamp(15px, 3vh, 30px)', flexShrink: 0 }}>
+          <h3 style={{ margin: '0 0 clamp(8px, 1.5vh, 15px) 0', fontSize: 'clamp(0.9rem, 2vh, 1rem)', textAlign: 'center' }}>
+            {ui['Key Heading'] || '🏆 Final Score Key'}
+          </h3>
+          
+          <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: '8px', justifyContent: 'center' }}>
+            
+            {/* Grade 5 */}
+            <div style={{ backgroundColor: '#206ca4', color: 'white', borderRadius: '6px', padding: '10px 5px', display: 'flex', flexDirection: 'column', alignItems: 'center', flex: '1 1 0', minWidth: '85px', textAlign: 'center' }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '8px' }}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+              {/* 👇 CHANGED: Added whiteSpace: 'pre-wrap' */}
+              <div style={{ fontWeight: 'bold', fontSize: 'clamp(0.75rem, 1.5vh, 0.9rem)', lineHeight: '1.2', whiteSpace: 'pre-wrap' }}>{ui['Key 1'] || 'EXCELLENT'}</div>
+              <div style={{ fontSize: 'clamp(0.65rem, 1.2vh, 0.8rem)', marginTop: '4px' }}>{ui['Key 1 Text'] || 'Above 250'}</div>
+            </div>
+
+            {/* Grade 4 */}
+            <div style={{ backgroundColor: '#2ea39b', color: 'white', borderRadius: '6px', padding: '10px 5px', display: 'flex', flexDirection: 'column', alignItems: 'center', flex: '1 1 0', minWidth: '85px', textAlign: 'center' }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '8px' }}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+              {/* 👇 CHANGED: Added whiteSpace: 'pre-wrap' */}
+              <div style={{ fontWeight: 'bold', fontSize: 'clamp(0.75rem, 1.5vh, 0.9rem)', lineHeight: '1.2', whiteSpace: 'pre-wrap' }}>{ui['Key 2'] || 'GOOD'}</div>
+              <div style={{ fontSize: 'clamp(0.65rem, 1.2vh, 0.8rem)', marginTop: '4px' }}>{ui['Key 2 Text'] || '151 - 250'}</div>
+            </div>
+
+            {/* Grade 3 */}
+            <div style={{ backgroundColor: '#7ab758', color: 'white', borderRadius: '6px', padding: '10px 5px', display: 'flex', flexDirection: 'column', alignItems: 'center', flex: '1 1 0', minWidth: '85px', textAlign: 'center' }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '8px' }}><circle cx="12" cy="12" r="10"></circle><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+              {/* 👇 CHANGED: Added whiteSpace: 'pre-wrap' */}
+              <div style={{ fontWeight: 'bold', fontSize: 'clamp(0.75rem, 1.5vh, 0.9rem)', lineHeight: '1.2', whiteSpace: 'pre-wrap' }}>{ui['Key 3'] || 'FAIR'}</div>
+              <div style={{ fontSize: 'clamp(0.65rem, 1.2vh, 0.8rem)', marginTop: '4px' }}>{ui['Key 3 Text'] || '51 - 150'}</div>
+            </div>
+
+            {/* Grade 2 */}
+            <div style={{ backgroundColor: '#f29b38', color: 'white', borderRadius: '6px', padding: '10px 5px', display: 'flex', flexDirection: 'column', alignItems: 'center', flex: '1 1 0', minWidth: '85px', textAlign: 'center' }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '8px' }}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+              {/* 👇 CHANGED: Added whiteSpace: 'pre-wrap' */}
+              <div style={{ fontWeight: 'bold', fontSize: 'clamp(0.75rem, 1.5vh, 0.9rem)', lineHeight: '1.2', whiteSpace: 'pre-wrap' }}>{ui['Key 4'] || 'POOR'}</div>
+              <div style={{ fontSize: 'clamp(0.65rem, 1.2vh, 0.8rem)', marginTop: '4px' }}>{ui['Key 4 Text'] || '0 - 50'}</div>
+            </div>
+
+            {/* Grade 1 */}
+            <div style={{ backgroundColor: '#df3f38', color: 'white', borderRadius: '6px', padding: '10px 5px', display: 'flex', flexDirection: 'column', alignItems: 'center', flex: '1 1 0', minWidth: '85px', textAlign: 'center' }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '8px' }}><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              {/* 👇 CHANGED: Added whiteSpace: 'pre-wrap' */}
+              <div style={{ fontWeight: 'bold', fontSize: 'clamp(0.75rem, 1.5vh, 0.9rem)', lineHeight: '1.2', whiteSpace: 'pre-wrap' }}>{ui['Key 5'] || 'VERY POOR'}</div>
+              <div style={{ fontSize: 'clamp(0.65rem, 1.2vh, 0.8rem)', marginTop: '4px' }}>{ui['Key 5 Text'] || 'Below 0'}</div>
+            </div>
+            
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
           <button 
             className="standard-button" 
             onMouseEnter={() => playSound('hover')}
             onClick={() => { playSound('click'); onBegin(); }} 
-            style={{ padding: '15px 40px', fontSize: '1.2rem', cursor: 'pointer', backgroundColor: '#ff9900', color: 'white', borderRadius: '8px', border: 'none', fontWeight: 'bold', boxShadow: '0 4px 6px rgba(0,0,0,0.2)' }}
+            style={{ padding: 'clamp(10px, 2vh, 15px) clamp(20px, 4vw, 30px)', fontSize: 'clamp(1rem, 2.5vh, 1.2rem)', cursor: 'pointer', backgroundColor: '#ff9900', color: 'white', borderRadius: '8px', border: 'none', fontWeight: 'bold' }}
           >
-            Let's Begin
+            {ui['Button Text'] || "Let's Begin"}
           </button>
         </div>
+        
       </div>
     </div>
   );
 }
-
 // --- 2. GAME COMPONENT ---
-function Game() {
+function Game({ isMuted, isTimerEnabled, ui }) {
+  const tutUi = ui.tutorial || {};
+  const scoreUi = ui.score || {};
   const [scenarios, setScenarios] = useState([]);
   const [responses, setResponses] = useState([]);
   
@@ -136,11 +238,21 @@ function Game() {
   const [selectedResponse, setSelectedResponse] = useState(null); 
   const [totalPoints, setTotalPoints] = useState(0);
   const [isRiveReady, setIsRiveReady] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(10); 
+  const [isTimeoutFlow, setIsTimeoutFlow] = useState(false); // 👇 NEW: Tracks if we are in a timeout 
+  const lastPlayedPhase = useRef(''); 
+  const displayedProgress = useRef(0); 
+  const progressAnimRef = useRef(null); 
+
+  const bgmPlayer = useRef(null);
+  const currentBgmSrc = useRef('');
+  const ambiencePlayer = useRef(null);
+  const currentAmbienceSrc = useRef('');
   
   const [history, setHistory] = useState([]);
 
   const { rive, RiveComponent } = useRive({
-    src: '/game.riv', 
+    src: `${import.meta.env.BASE_URL}game.riv`, 
     artboard: 'MAIN',
     stateMachines: 'State Machine 1',
     autoplay: true,
@@ -148,6 +260,35 @@ function Game() {
     layout: new Layout({ fit: Fit.Layout, alignment: Alignment.Center }),
     onLoad: () => setIsRiveReady(true)
   });
+
+  // 👇 NEW: Load the Logo specifically for the End Screen
+  const { RiveComponent: LogoRive } = useRive({
+    src: `${import.meta.env.BASE_URL}logo.riv`, 
+    stateMachines: 'State Machine 1', 
+    autoplay: true,
+    autoBind: true,
+    layout: new Layout({ fit: Fit.Contain, alignment: Alignment.Center }) 
+  });
+
+  // 👇 UPDATED: Cleanup both audio tracks when the game component unmounts
+  useEffect(() => {
+    return () => {
+      if (bgmPlayer.current) {
+        bgmPlayer.current.pause();
+        bgmPlayer.current = null;
+      }
+      if (ambiencePlayer.current) {
+        ambiencePlayer.current.pause();
+        ambiencePlayer.current = null;
+      }
+    };
+  }, []);
+
+  // 👇 UPDATED: Watch for mute toggles and dynamically update BOTH active tracks
+  useEffect(() => {
+    if (bgmPlayer.current) bgmPlayer.current.muted = isMuted;
+    if (ambiencePlayer.current) ambiencePlayer.current.muted = isMuted;
+  }, [isMuted]);
 
   // DATA FETCHING
   useEffect(() => {
@@ -164,24 +305,193 @@ function Game() {
     });
   }, []);
 
-  // RIVE UPDATES
+// 👇 UPDATED: Restored standard AUTO ADVANCE TIMER
+  useEffect(() => {
+    if (gamePhase === 'points_award') {
+      const timer = setTimeout(() => {
+        setGamePhase('response2'); 
+      }, 1500); 
+      return () => clearTimeout(timer); 
+    }
+  }, [gamePhase]);
+
+  // 👇 UPDATED: Countdown Timer Logic
+  useEffect(() => {
+    if (!isTimerEnabled) return; 
+
+    // 👇 THIS is the crucial line that prevents the ReferenceError!
+    let timerId; 
+
+    if (gamePhase === 'options' && timeLeft > 0) {
+      timerId = setTimeout(() => setTimeLeft(prev => prev - 1), 1000);
+    } else if (gamePhase === 'options' && timeLeft === 0 && !isTimeoutFlow) {
+      // Time is up! Flag it, play the fail sound, and STAY on the options screen.
+      playSound('fail');
+      setIsTimeoutFlow(true);
+    }
+    
+    return () => clearTimeout(timerId);
+  }, [gamePhase, timeLeft, isTimerEnabled, isTimeoutFlow]);
+
+  // 👇 NEW: Developer Cheat Code (Shift + 0-9 to skip scenarios)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Check if Shift is held and a number key is pressed
+      if (e.shiftKey && e.code.startsWith('Digit')) {
+        const targetIndex = parseInt(e.code.replace('Digit', ''), 10);
+        
+        // Ensure the scenario actually exists before jumping
+        if (scenarios.length > 0 && targetIndex >= 0 && targetIndex < scenarios.length) {
+          console.log(`🛠️ DEV CHEAT: Jumping to scenario index ${targetIndex}`);
+          setScenarioRowIndex(targetIndex);
+          setGamePhase('scenario_step');
+          setSelectedResponse(null);
+          
+          // Clear any running Rive popups
+          if (rive && rive.viewModelInstance) {
+            rive.viewModelInstance.enum('popup_type_enum').value = 'None';
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [scenarios, rive]);
+
+
+// RIVE UPDATES
   useEffect(() => {
     if (!isRiveReady || !rive || scenarios.length === 0) return;
     const viewModel = rive.viewModelInstance;
     if (!viewModel) return;
 
-    if (gamePhase === 'end_screen') {
-      playSound('complete');
+    // 👇 UPDATED: Handle both end screens
+    if (gamePhase === 'pre_end_screen' || gamePhase === 'end_screen') {
+      if (gamePhase === 'pre_end_screen') playSound('complete'); 
+      try {
+        viewModel.number('currentProgress').value = 100;
+        viewModel.string('completePercentage').value = '100%';
+        viewModel.enum('popup_type_enum').value = 'None'; // Hide any lingering popups
+      } catch (e) {
+        console.error("Progress update error:", e);
+      }
       return;
     }
+
+    const currentStepId = `${gamePhase}_${scenarioRowIndex}`;
+    if (lastPlayedPhase.current === currentStepId) return; 
+    lastPlayedPhase.current = currentStepId; 
 
     const currentScenarioRow = scenarios[scenarioRowIndex];
     if (!currentScenarioRow) return;
 
+    // 👇 UPDATED: Background Audio & Ambience checking logic
+    
+    // 1. Process Music
+    const musicRaw = getFuzzyKey(currentScenarioRow, 'Music');
+    const musicStr = musicRaw ? String(musicRaw).trim() : '';
+    const isValidMusic = musicStr !== '' && musicStr.toUpperCase() !== 'NA' && musicStr.toUpperCase() !== 'N/A';
+
+    if (isValidMusic && musicStr !== currentBgmSrc.current) {
+      if (bgmPlayer.current) bgmPlayer.current.pause();
+      currentBgmSrc.current = musicStr;
+      
+      bgmPlayer.current = new Audio(`${import.meta.env.BASE_URL}${musicStr}`);
+      bgmPlayer.current.loop = true; 
+      bgmPlayer.current.volume = 0.3; 
+      bgmPlayer.current.muted = isMuted;
+      
+      bgmPlayer.current.play().catch(e => console.log("Music autoplay blocked by browser."));
+    }
+
+    // 2. Process Ambience
+    const ambienceRaw = getFuzzyKey(currentScenarioRow, 'Ambience');
+    const ambienceStr = ambienceRaw ? String(ambienceRaw).trim() : '';
+    const isValidAmbience = ambienceStr !== '' && ambienceStr.toUpperCase() !== 'NA' && ambienceStr.toUpperCase() !== 'N/A';
+
+    if (isValidAmbience && ambienceStr !== currentAmbienceSrc.current) {
+      if (ambiencePlayer.current) ambiencePlayer.current.pause();
+      currentAmbienceSrc.current = ambienceStr;
+      
+      ambiencePlayer.current = new Audio(`${import.meta.env.BASE_URL}${ambienceStr}`);
+      ambiencePlayer.current.loop = true; 
+      ambiencePlayer.current.volume = 0.3; 
+      ambiencePlayer.current.muted = isMuted;
+      
+      ambiencePlayer.current.play().catch(e => console.log("Ambience autoplay blocked by browser."));
+    }
+    // 👆 END OF NEW AUDIO LOGIC
+
     try {
+      // 1. Find total number of multiple-choice questions in the entire game
+      const totalQuestions = scenarios.filter(row => {
+        const raw = getFuzzyKey(row, 'Responses');
+        const str = raw ? String(raw).trim().toUpperCase() : '';
+        return str !== '' && str !== 'NA' && str !== 'N/A';
+      }).length || 10; 
+
+      // 2. Count how many questions we have fully passed prior to the current row
+      let questionsAnswered = scenarios.slice(0, scenarioRowIndex).filter(row => {
+        const raw = getFuzzyKey(row, 'Responses');
+        const str = raw ? String(raw).trim().toUpperCase() : '';
+        return str !== '' && str !== 'NA' && str !== 'N/A';
+      }).length;
+
+      // 3. If we are currently ON a question row, and have made a choice, add 1
+      const currentRaw = getFuzzyKey(currentScenarioRow, 'Responses');
+      const currentStr = currentRaw ? String(currentRaw).trim().toUpperCase() : '';
+      const currentIsQuestion = currentStr !== '' && currentStr !== 'NA' && currentStr !== 'N/A';
+
+      if (currentIsQuestion && (gamePhase === 'response1' || gamePhase === 'points_award' || gamePhase === 'response2' || gamePhase === 'insight')) {
+        questionsAnswered += 1;
+      }
+
+      // 4. Calculate the target percentage
+      const targetProgressVal = Math.round((questionsAnswered / totalQuestions) * 100);
+
+      // 5. Animate to the new target over 1000ms if it has changed!
+      if (targetProgressVal !== displayedProgress.current) {
+        const startProgress = displayedProgress.current;
+        const duration = 1000; 
+        const startTime = performance.now();
+
+        if (progressAnimRef.current) cancelAnimationFrame(progressAnimRef.current);
+
+        const animateProgress = (currentTime) => {
+          const elapsedTime = currentTime - startTime;
+          const progressRatio = Math.min(elapsedTime / duration, 1);
+          const currentVal = Math.round(startProgress + (targetProgressVal - startProgress) * progressRatio);
+
+          try {
+            viewModel.number('currentProgress').value = currentVal;
+            viewModel.string('completePercentage').value = `${currentVal}%`;
+          } catch (e) {}
+
+          if (progressRatio < 1) {
+            progressAnimRef.current = requestAnimationFrame(animateProgress);
+          } else {
+            displayedProgress.current = targetProgressVal;
+          }
+        };
+        progressAnimRef.current = requestAnimationFrame(animateProgress);
+      } else {
+        viewModel.number('currentProgress').value = targetProgressVal;
+        viewModel.string('completePercentage').value = `${targetProgressVal}%`;
+      }
+
+      // Automatically reset all characters' isTalking property to false on any step/phase change
+      Object.values(NESTED_VM_MAP).forEach(vmName => {
+        try {
+          const charVm = viewModel.viewModel(vmName);
+          if (charVm && charVm.boolean('isTalking')) {
+            charVm.boolean('isTalking').value = false;
+          }
+        } catch (e) {}
+      });
+
       if (gamePhase === 'scenario_step') {
         viewModel.enum('setting_enum').value = String(getFuzzyKey(currentScenarioRow, 'Setting') || 'Fulfilment Centre').trim();
-        
         const charRawString = String(getFuzzyKey(currentScenarioRow, 'Character(s)') || getFuzzyKey(currentScenarioRow, 'Characters') || '');
         const rawChars = charRawString.split(',').map(c => c.trim()).filter(Boolean);
         const inSceneChars = rawChars.map(cleanCharName);
@@ -192,11 +502,29 @@ function Game() {
 
         const popupChar = cleanCharName(getFuzzyKey(currentScenarioRow, 'Pop-Up Character') || getFuzzyKey(currentScenarioRow, 'Set-up Character'));
         const activeChar = cleanCharName(getFuzzyKey(currentScenarioRow, 'Active Character'));
+        const finalActiveChar = activeChar !== 'None' ? activeChar : popupChar;
         
-        viewModel.enum('active_character').value = activeChar !== 'None' ? activeChar : popupChar;
+        viewModel.enum('active_character').value = finalActiveChar;
         viewModel.enum('popup_char_enum').value = popupChar;
-        viewModel.enum('popup_type_enum').value = String(getFuzzyKey(currentScenarioRow, 'Pop-Up Type') || getFuzzyKey(currentScenarioRow, 'Set-up Type') || 'None').trim();
-        viewModel.enum('emotion_enum').value = String(getFuzzyKey(currentScenarioRow, 'Emotion') || 'Neutral').trim();
+        
+        // 👇 CHANGED: Extracted popupTypeStr to a variable so we can verify it below
+        const popupTypeStr = String(getFuzzyKey(currentScenarioRow, 'Pop-Up Type') || getFuzzyKey(currentScenarioRow, 'Set-up Type') || 'None').trim();
+        viewModel.enum('popup_type_enum').value = popupTypeStr;
+        
+        const emotionStr = String(getFuzzyKey(currentScenarioRow, 'Emotion') || 'Neutral').trim();
+        viewModel.enum('emotion_enum').value = emotionStr;
+        
+        const vmName = NESTED_VM_MAP[finalActiveChar.toLowerCase()];
+        if (vmName && viewModel.viewModel(vmName)) {
+          viewModel.viewModel(vmName).enum('States').value = emotionStr;
+          // 👇 UPDATED: Added a check so isTalking remains false if it's a Thought Bubble
+          try {
+            if (viewModel.viewModel(vmName).boolean('isTalking') && popupTypeStr !== 'Thought Bubble') {
+              viewModel.viewModel(vmName).boolean('isTalking').value = true;
+            }
+          } catch(e) {}
+        }
+
         viewModel.string('dialogue_text').value = String(getFuzzyKey(currentScenarioRow, 'Set-up Text') || getFuzzyKey(currentScenarioRow, 'Text') || '').trim();
         
         viewModel.trigger('show_popup').trigger();
@@ -204,31 +532,206 @@ function Game() {
       } 
       else if (gamePhase === 'options') {
         viewModel.enum('popup_type_enum').value = 'None';
+        viewModel.enum('popup_char_enum').value = 'None';
+      }
+      else if (gamePhase === 'response1' && selectedResponse) {
+        const resp1Char = cleanCharName(getFuzzyKey(selectedResponse, 'Response 1 Character'));
+        viewModel.enum('active_character').value = resp1Char; 
+        
+        // 👇 CHANGED: Extracted popupTypeStr to a variable
+        const popupTypeStr = String(getFuzzyKey(selectedResponse, 'Response 1 Type') || getFuzzyKey(selectedResponse, 'Reponse 1 Type') || 'Speech Bubble').trim();
+        viewModel.enum('popup_type_enum').value = popupTypeStr;
+        
+        const emotionStr = String(getFuzzyKey(selectedResponse, 'Response 1 Emotion') || 'Neutral').trim();
+        viewModel.enum('emotion_enum').value = emotionStr;
+
+        const vmName = NESTED_VM_MAP[resp1Char.toLowerCase()];
+        if (vmName && viewModel.viewModel(vmName)) {
+          viewModel.viewModel(vmName).enum('States').value = emotionStr;
+          // 👇 UPDATED: Added a check so isTalking remains false if it's a Thought Bubble
+          try {
+            if (viewModel.viewModel(vmName).boolean('isTalking') && popupTypeStr !== 'Thought Bubble') {
+              viewModel.viewModel(vmName).boolean('isTalking').value = true;
+            }
+          } catch(e) {}
+        }
+
+        viewModel.string('dialogue_text').value = String(getFuzzyKey(selectedResponse, 'Response 1 Text') || getFuzzyKey(selectedResponse, 'Reponse 1 Text') || '').trim();
+        
+        viewModel.trigger('show_popup').trigger();
+        playSound('popup');
+      } 
+      else if (gamePhase === 'points_award' && selectedResponse) {
+        viewModel.enum('popup_type_enum').value = 'None';
+
+        const rawPoints = getFuzzyKey(selectedResponse, 'Points') || '0';
+        const pointsMatch = String(rawPoints).match(/-?\d+/);
+        const pointsGained = pointsMatch ? parseInt(pointsMatch[0], 10) : 0;
+        const formattedPointsGained = pointsGained > 0 ? `+${pointsGained}` : pointsGained.toString();
+        
+        viewModel.string('points_text').value = totalPoints.toString();
+        viewModel.string('points_gained_text').value = formattedPointsGained; 
+        
+        if (pointsGained === 0) {
+          viewModel.trigger('zero_trigger').trigger();
+        }
+      }
+      else if (gamePhase === 'response2' && selectedResponse) {
+        const resp2Char = cleanCharName(getFuzzyKey(selectedResponse, 'Response 2 Character'));
+        viewModel.enum('popup_char_enum').value = resp2Char;
+        viewModel.enum('active_character').value = resp2Char; 
+        
+        // 👇 CHANGED: Extracted popupTypeStr to a variable
+        const popupTypeStr = String(getFuzzyKey(selectedResponse, 'Response 2 Type') || getFuzzyKey(selectedResponse, 'Reponse 2 Type') || 'Speech Bubble').trim();
+        viewModel.enum('popup_type_enum').value = popupTypeStr;
+        
+        const emotionStr = String(getFuzzyKey(selectedResponse, 'Response 2 Emotion') || 'Neutral').trim();
+        viewModel.enum('emotion_enum').value = emotionStr;
+
+        const vmName = NESTED_VM_MAP[resp2Char.toLowerCase()];
+        if (vmName && viewModel.viewModel(vmName)) {
+          viewModel.viewModel(vmName).enum('States').value = emotionStr;
+          // 👇 UPDATED: Added a check so isTalking remains false if it's a Thought Bubble
+          try {
+            if (viewModel.viewModel(vmName).boolean('isTalking') && popupTypeStr !== 'Thought Bubble') {
+              viewModel.viewModel(vmName).boolean('isTalking').value = true;
+            }
+          } catch(e) {}
+        }
+
+        viewModel.string('dialogue_text').value = String(getFuzzyKey(selectedResponse, 'Response 2 Text') || getFuzzyKey(selectedResponse, 'Reponse 2 Text') || '').trim();
+        
+        viewModel.trigger('show_popup').trigger();
+        playSound('popup');
+      }
+      else if (gamePhase === 'options') {
+        viewModel.enum('popup_type_enum').value = 'None';
+        viewModel.enum('popup_char_enum').value = 'None';
       }
       else if (gamePhase === 'response1' && selectedResponse) {
         const resp1Char = cleanCharName(getFuzzyKey(selectedResponse, 'Response 1 Character'));
         viewModel.enum('active_character').value = resp1Char; 
         
         viewModel.enum('popup_type_enum').value = String(getFuzzyKey(selectedResponse, 'Response 1 Type') || getFuzzyKey(selectedResponse, 'Reponse 1 Type') || 'Speech Bubble').trim();
-        viewModel.enum('emotion_enum').value = String(getFuzzyKey(selectedResponse, 'Response 1 Emotion') || 'Neutral').trim();
+        
+        const emotionStr = String(getFuzzyKey(selectedResponse, 'Response 1 Emotion') || 'Neutral').trim();
+        viewModel.enum('emotion_enum').value = emotionStr;
+
+        const vmName = NESTED_VM_MAP[resp1Char.toLowerCase()];
+        if (vmName && viewModel.viewModel(vmName)) {
+          viewModel.viewModel(vmName).enum('States').value = emotionStr;
+          // 👇 NEW: Turn talking on for response 1 character
+          try {
+            if (viewModel.viewModel(vmName).boolean('isTalking')) {
+              viewModel.viewModel(vmName).boolean('isTalking').value = true;
+            }
+          } catch(e) {}
+        }
+
         viewModel.string('dialogue_text').value = String(getFuzzyKey(selectedResponse, 'Response 1 Text') || getFuzzyKey(selectedResponse, 'Reponse 1 Text') || '').trim();
         
         viewModel.trigger('show_popup').trigger();
         playSound('popup');
       } 
+      else if (gamePhase === 'points_award' && selectedResponse) {
+        viewModel.enum('popup_type_enum').value = 'None';
+
+        const rawPoints = getFuzzyKey(selectedResponse, 'Points') || '0';
+        const pointsMatch = String(rawPoints).match(/-?\d+/);
+        const pointsGained = pointsMatch ? parseInt(pointsMatch[0], 10) : 0;
+        const formattedPointsGained = pointsGained > 0 ? `+${pointsGained}` : pointsGained.toString();
+        
+        viewModel.string('points_text').value = totalPoints.toString();
+        viewModel.string('points_gained_text').value = formattedPointsGained; 
+        
+        if (pointsGained === 0) {
+          viewModel.trigger('zero_trigger').trigger();
+        }
+      }
       else if (gamePhase === 'response2' && selectedResponse) {
         const resp2Char = cleanCharName(getFuzzyKey(selectedResponse, 'Response 2 Character'));
         viewModel.enum('popup_char_enum').value = resp2Char;
         viewModel.enum('active_character').value = resp2Char; 
         
         viewModel.enum('popup_type_enum').value = String(getFuzzyKey(selectedResponse, 'Response 2 Type') || getFuzzyKey(selectedResponse, 'Reponse 2 Type') || 'Speech Bubble').trim();
-        viewModel.enum('emotion_enum').value = String(getFuzzyKey(selectedResponse, 'Response 2 Emotion') || 'Neutral').trim();
+        
+        const emotionStr = String(getFuzzyKey(selectedResponse, 'Response 2 Emotion') || 'Neutral').trim();
+        viewModel.enum('emotion_enum').value = emotionStr;
+
+        const vmName = NESTED_VM_MAP[resp2Char.toLowerCase()];
+        if (vmName && viewModel.viewModel(vmName)) {
+          viewModel.viewModel(vmName).enum('States').value = emotionStr;
+          // 👇 NEW: Turn talking on for response 2 character
+          try {
+            if (viewModel.viewModel(vmName).boolean('isTalking')) {
+              viewModel.viewModel(vmName).boolean('isTalking').value = true;
+            }
+          } catch(e) {}
+        }
+
         viewModel.string('dialogue_text').value = String(getFuzzyKey(selectedResponse, 'Response 2 Text') || getFuzzyKey(selectedResponse, 'Reponse 2 Text') || '').trim();
         
-        viewModel.string('points_text').value = totalPoints.toString();
+        viewModel.trigger('show_popup').trigger();
+        playSound('popup');
+      }
+      else if (gamePhase === 'options') {
+        viewModel.enum('popup_type_enum').value = 'None';
+        viewModel.enum('popup_char_enum').value = 'None';
+      }
+      else if (gamePhase === 'response1' && selectedResponse) {
+        const resp1Char = cleanCharName(getFuzzyKey(selectedResponse, 'Response 1 Character'));
+        viewModel.enum('active_character').value = resp1Char; 
+        
+        viewModel.enum('popup_type_enum').value = String(getFuzzyKey(selectedResponse, 'Response 1 Type') || getFuzzyKey(selectedResponse, 'Reponse 1 Type') || 'Speech Bubble').trim();
+        
+        const emotionStr = String(getFuzzyKey(selectedResponse, 'Response 1 Emotion') || 'Neutral').trim();
+        viewModel.enum('emotion_enum').value = emotionStr;
+
+        const vmName = NESTED_VM_MAP[resp1Char.toLowerCase()];
+        if (vmName && viewModel.viewModel(vmName)) {
+          viewModel.viewModel(vmName).enum('States').value = emotionStr;
+        }
+
+        viewModel.string('dialogue_text').value = String(getFuzzyKey(selectedResponse, 'Response 1 Text') || getFuzzyKey(selectedResponse, 'Reponse 1 Text') || '').trim();
+        
         viewModel.trigger('show_popup').trigger();
         playSound('popup');
       } 
+      else if (gamePhase === 'points_award' && selectedResponse) {
+        viewModel.enum('popup_type_enum').value = 'None';
+
+        const rawPoints = getFuzzyKey(selectedResponse, 'Points') || '0';
+        const pointsMatch = String(rawPoints).match(/-?\d+/);
+        const pointsGained = pointsMatch ? parseInt(pointsMatch[0], 10) : 0;
+        const formattedPointsGained = pointsGained > 0 ? `+${pointsGained}` : pointsGained.toString();
+        
+        viewModel.string('points_text').value = totalPoints.toString();
+        viewModel.string('points_gained_text').value = formattedPointsGained; 
+        
+        if (pointsGained === 0) {
+          viewModel.trigger('zero_trigger').trigger();
+        }
+      }
+      else if (gamePhase === 'response2' && selectedResponse) {
+        const resp2Char = cleanCharName(getFuzzyKey(selectedResponse, 'Response 2 Character'));
+        viewModel.enum('popup_char_enum').value = resp2Char;
+        viewModel.enum('active_character').value = resp2Char; 
+        
+        viewModel.enum('popup_type_enum').value = String(getFuzzyKey(selectedResponse, 'Response 2 Type') || getFuzzyKey(selectedResponse, 'Reponse 2 Type') || 'Speech Bubble').trim();
+        
+        const emotionStr = String(getFuzzyKey(selectedResponse, 'Response 2 Emotion') || 'Neutral').trim();
+        viewModel.enum('emotion_enum').value = emotionStr;
+
+        const vmName = NESTED_VM_MAP[resp2Char.toLowerCase()];
+        if (vmName && viewModel.viewModel(vmName)) {
+          viewModel.viewModel(vmName).enum('States').value = emotionStr;
+        }
+
+        viewModel.string('dialogue_text').value = String(getFuzzyKey(selectedResponse, 'Response 2 Text') || getFuzzyKey(selectedResponse, 'Reponse 2 Text') || '').trim();
+        
+        viewModel.trigger('show_popup').trigger();
+        playSound('popup');
+      }
       else if (gamePhase === 'insight' && selectedResponse) {
         viewModel.enum('popup_type_enum').value = 'None';
         viewModel.string('insight_text').value = String(getFuzzyKey(selectedResponse, 'Click to reveal') || '').trim();
@@ -238,9 +741,8 @@ function Game() {
     } catch (error) {
       console.error("❌ Error setting Rive properties:", error);
     }
-  }, [rive, isRiveReady, scenarioRowIndex, gamePhase, scenarios, selectedResponse, totalPoints]);
+ }, [rive, isRiveReady, scenarioRowIndex, gamePhase, scenarios, selectedResponse, totalPoints]);
 
-  // --- LOGIC CHECKS FOR OPTIONS ---
   const currentScenarioRow = scenarios[scenarioRowIndex] || {};
   const rawResponseValue = getFuzzyKey(currentScenarioRow, 'Responses');
   const responsesTextStr = rawResponseValue ? String(rawResponseValue).trim().toUpperCase() : '';
@@ -248,8 +750,6 @@ function Game() {
 
   const responseNumberMatch = String(rawResponseValue).match(/\d+/);
   const optionMatchNumber = responseNumberMatch ? parseInt(responseNumberMatch[0], 10) : null;
-
-  const displayScenarioText = getFuzzyKey(currentScenarioRow, 'Scenario') || '1';
 
   const currentOptions = hasOptions 
     ? responses.filter(r => {
@@ -262,7 +762,6 @@ function Game() {
 
   const questionText = currentOptions.length > 0 ? getFuzzyKey(currentOptions[0], 'Question') : null;
 
-  // --- HISTORY & STATE MANAGEMENT ---
   const saveHistoryState = () => {
     setHistory(prev => [...prev, {
       scenarioRowIndex,
@@ -272,26 +771,6 @@ function Game() {
     }]);
   };
 
-  const handleBack = () => {
-    playSound('click');
-    if (history.length === 0) return;
-    
-    const newHistory = [...history];
-    const previousState = newHistory.pop();
-    setHistory(newHistory);
-
-    if (gamePhase === 'insight' || gamePhase === 'end_screen') {
-      if (rive && rive.viewModelInstance) {
-        rive.viewModelInstance.trigger('hide_insight').trigger();
-      }
-    }
-
-    setScenarioRowIndex(previousState.scenarioRowIndex);
-    setGamePhase(previousState.gamePhase);
-    setSelectedResponse(previousState.selectedResponse);
-    setTotalPoints(previousState.totalPoints);
-  };
-
   const handleReplay = () => {
     playSound('click');
     if (rive && rive.viewModelInstance) {
@@ -299,26 +778,50 @@ function Game() {
       rive.viewModelInstance.trigger('hide_insight').trigger();
     }
     
+    lastPlayedPhase.current = ''; 
+    displayedProgress.current = 0;
+    if (progressAnimRef.current) cancelAnimationFrame(progressAnimRef.current);
+
+    // 👇 UPDATED: Stop both music and ambience on replay
+    if (bgmPlayer.current) {
+      bgmPlayer.current.pause();
+      currentBgmSrc.current = '';
+    }
+    if (ambiencePlayer.current) {
+      ambiencePlayer.current.pause();
+      currentAmbienceSrc.current = '';
+    }
+
     setTimeout(() => {
       setScenarioRowIndex(0);
       setGamePhase('scenario_step');
       setSelectedResponse(null);
       setTotalPoints(0);
       setHistory([]);
-    }, 150); 
+      setIsTimeoutFlow(false); // 👇 NEW
+    }, 150);
   };
 
-  // --- UI HANDLERS ---
   const handleNextScenarioStep = () => {
     playSound('click');
     saveHistoryState();
+    
     if (hasOptions) {
+      // 👇 NEW: Dynamically fetch the timer from the Google Sheet
+      const currentScenarioRow = scenarios[scenarioRowIndex] || {};
+      const rawTimerValue = getFuzzyKey(currentScenarioRow, 'Timer');
+      const parsedTimer = parseInt(rawTimerValue, 10);
+      
+      // Fallback to 10 seconds if the cell is completely blank or invalid
+      const finalTimerValue = !isNaN(parsedTimer) && parsedTimer > 0 ? parsedTimer : 10; 
+
+      setTimeLeft(finalTimerValue); 
       setGamePhase('options');
     } else {
       if (scenarioRowIndex < scenarios.length - 1) {
         setScenarioRowIndex(prev => prev + 1); 
       } else {
-        setGamePhase('end_screen');
+        setGamePhase('pre_end_screen'); 
       }
     }
   };
@@ -326,7 +829,19 @@ function Game() {
   const handleOptionSelect = (responseRow) => {
     playSound('click');
     saveHistoryState();
-    setSelectedResponse(responseRow);
+    
+    let finalResponse = responseRow;
+    
+    // If they are clicking after a timeout, force points to 0
+    if (isTimeoutFlow) {
+      finalResponse = {
+        ...responseRow,
+        'Points': '0',
+        'Click to reveal': `[TIME OUT] ${getFuzzyKey(responseRow, 'Click to reveal') || ''}`
+      };
+    }
+
+    setSelectedResponse(finalResponse);
     setGamePhase('response1');
   };
 
@@ -338,12 +853,11 @@ function Game() {
     const pointsMatch = String(rawPoints).match(/-?\d+/);
     const pointsGained = pointsMatch ? parseInt(pointsMatch[0], 10) : 0;
     
-    // Play SFX based on points gained!
     if (pointsGained > 0) playSound('success');
     else if (pointsGained < 0) playSound('fail');
 
     setTotalPoints(prev => prev + pointsGained);
-    setGamePhase('response2');
+    setGamePhase('points_award'); 
   };
 
   const handleContinueToInsight = () => {
@@ -356,49 +870,70 @@ function Game() {
     playSound('click');
     saveHistoryState();
     rive.viewModelInstance.trigger('hide_insight').trigger();
+    setIsTimeoutFlow(false); 
     if (scenarioRowIndex < scenarios.length - 1) {
       setScenarioRowIndex(prev => prev + 1); 
       setGamePhase('scenario_step');
       setSelectedResponse(null);
     } else {
-      setGamePhase('end_screen');
+      setGamePhase('pre_end_screen'); 
     }
   };
 
   const isLoading = !isRiveReady || scenarios.length === 0 || responses.length === 0;
-
+  
   return (
     <div style={{ width: '100vw', height: '100vh', margin: 0, padding: 0, overflow: 'hidden', position: 'relative', backgroundColor: '#111' }}>
       
-      {/* LOADING OVERLAY */}
       {isLoading && (
         <div style={{ position: 'absolute', inset: 0, zIndex: 100, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffffff', color: '#333' }}>
-          <h2>Loading Simulation...</h2>
+          <h2>{tutUi['Loading Text'] || 'Loading Simulation...'}</h2>
         </div>
       )}
 
-      {/* END SCREEN OVERLAY */}
+      {/* 👇 NEW: Pre-End Transition Screen */}
+      {gamePhase === 'pre_end_screen' && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 100, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffffff', color: '#333' }}>
+          
+          <h1 style={{ fontSize: 'clamp(2rem, 5vw, 3rem)', margin: '0 0 40px 0', lineHeight: '1.2', textAlign: 'center', padding: '0 20px' }}>
+            {scoreUi['Ending Title'] || 'Shift Complete!'}
+          </h1>
+          
+          <button 
+            className="standard-button" 
+            onMouseEnter={() => playSound('hover')}
+            onClick={() => { playSound('click'); setGamePhase('end_screen'); }} 
+            style={{ padding: '15px 40px', fontSize: '1.2rem', cursor: 'pointer', backgroundColor: '#ff9900', color: 'white', borderRadius: '8px', border: 'none', fontWeight: 'bold' }}
+          >
+            {scoreUi['End Button Text'] || 'See Results'}
+          </button>
+        </div>
+      )}
+
       {gamePhase === 'end_screen' && (
         <div style={{ position: 'absolute', inset: 0, zIndex: 100, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffffff', color: '#333' }}>
           
-          <h1 style={{ fontSize: '4rem', margin: '0 0 30px 0', lineHeight: '1.2' }}>Shift Complete!</h1>
+          <div style={{ width: '150px', height: '150px', marginBottom: '10px' }}>
+            <LogoRive />
+          </div>
+
+          <h1 style={{ fontSize: '4rem', margin: '0 0 30px 0', lineHeight: '1.2' }}>{scoreUi['Title'] || 'Shift Complete!'}</h1>
           
           <p style={{ fontSize: '2rem', margin: '0 0 15px 0', color: '#666' }}>
-            Final Score: <strong style={{ color: '#ff9900' }}>{totalPoints}</strong>
+            {scoreUi['Score Text'] || 'Final Score:'} <strong style={{ color: '#ff9900' }}>{totalPoints}</strong>
           </p>
           
-          {/* Score Ranking Display */}
           <p style={{ fontSize: '1.8rem', margin: '0 0 50px 0', fontWeight: 'bold' }}>
-            Rating: <span style={{ 
-              color: totalPoints < 0 ? '#d9534f' : 
-                     totalPoints <= 50 ? '#f0ad4e' : 
-                     totalPoints <= 150 ? '#5bc0de' : 
-                     totalPoints <= 250 ? '#0275d8' : '#5cb85c' 
+            {scoreUi['Rating Text'] || 'Rating'}: <span style={{ 
+              color: totalPoints < 0 ? '#df3f38' : 
+                     totalPoints <= 50 ? '#f29b38' : 
+                     totalPoints <= 150 ? '#7ab758' : 
+                     totalPoints <= 250 ? '#2ea39b' : '#206ca4' 
             }}>
-              {totalPoints < 0 ? 'Terrible' : 
-               totalPoints <= 50 ? 'Poor' : 
-               totalPoints <= 150 ? 'Average' : 
-               totalPoints <= 250 ? 'Great' : 'Excellent'}
+              {totalPoints < 0 ? tutUi['Key 5'] : 
+               totalPoints <= 50 ? tutUi['Key 4'] : 
+               totalPoints <= 150 ? tutUi['Key 3'] : 
+               totalPoints <= 250 ? tutUi['Key 2'] : tutUi['Key 1']}
             </span>
           </p>
 
@@ -406,18 +941,38 @@ function Game() {
             className="standard-button" 
             onMouseEnter={() => playSound('hover')}
             onClick={handleReplay} 
-            style={{ padding: '15px 40px', fontSize: '1.2rem', cursor: 'pointer', backgroundColor: '#ff9900', color: 'white', borderRadius: '8px', border: 'none', fontWeight: 'bold', boxShadow: '0 4px 6px rgba(0,0,0,0.2)' }}
+            style={{ padding: '15px 40px', fontSize: '1.2rem', cursor: 'pointer', backgroundColor: '#ff9900', color: 'white', borderRadius: '8px', border: 'none', fontWeight: 'bold' }}
           >
-            Replay Game
+            {scoreUi['Button Text'] || 'Replay Game'}
           </button>
-
         </div>
       )}
 
       <RiveComponent style={{ width: '100%', height: '100%', position: 'absolute', zIndex: 1 }} />
 
-      {!isLoading && gamePhase !== 'end_screen' && (
+      {!isLoading && gamePhase !== 'end_screen' && gamePhase !== 'pre_end_screen' && (
         <>
+          {/* 👇 NEW: Visual Timer */}
+          {isTimerEnabled && gamePhase === 'options' && (
+            <div style={{
+              position: 'absolute',
+              top: '40px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              backgroundColor: timeLeft <= 3 ? '#df3f38' : '#333', // Turns red at 3 seconds
+              color: 'white',
+              padding: '10px 25px',
+              borderRadius: '30px',
+              fontSize: '1.5rem',
+              fontWeight: 'bold',
+              zIndex: 100,
+              border: '0px solid #000',
+              transition: 'background-color 0.3s ease'
+            }}>
+              ⏱️ {timeLeft}s
+            </div>
+          )}
+
           <div style={{ position: 'absolute', bottom: 40, left: 0, right: 0, zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px' }}>
             
             {gamePhase === 'scenario_step' && (
@@ -425,7 +980,7 @@ function Game() {
                 className="standard-button" 
                 onMouseEnter={() => playSound('hover')}
                 onClick={handleNextScenarioStep} 
-                style={{ padding: '15px 30px', fontSize: '1.2rem', cursor: 'pointer', borderRadius: '8px', backgroundColor: '#fff', color: 'black', border: 'none', boxShadow: '0 4px 6px rgba(0,0,0,0.3)' }}
+                style={{ padding: '15px 30px', fontSize: '1.2rem', cursor: 'pointer', borderRadius: '8px', backgroundColor: '#fff', color: 'black', border: 'none' }}
               >
                 Continue
               </button>
@@ -434,7 +989,7 @@ function Game() {
             {gamePhase === 'options' && (
               <>
                 {questionText && (
-                  <div style={{ backgroundColor: 'rgba(0,0,0,0.85)', padding: '15px 30px', borderRadius: '12px', maxWidth: '800px', textAlign: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.5)' }}>
+                  <div style={{ backgroundColor: 'rgba(0,0,0,0.85)', padding: '15px 30px', borderRadius: '12px', maxWidth: '800px', textAlign: 'center' }}>
                     <h2 style={{ margin: 0, color: 'white', fontSize: '1.4rem', fontWeight: 'normal' }}>
                       {questionText}
                     </h2>
@@ -444,25 +999,45 @@ function Game() {
                 <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', alignItems: 'center' }}>
                   {currentOptions.map((opt, i) => {
                     const letter = String.fromCharCode(65 + i); 
+                    
+                    // 👇 NEW: Check if this specific option is the correct one (50 points)
+                    const rawPoints = getFuzzyKey(opt, 'Points') || '0';
+                    const ptsMatch = String(rawPoints).match(/-?\d+/);
+                    const isCorrectOption = ptsMatch && parseInt(ptsMatch[0], 10) === 50;
+                    
+                    // 👇 NEW: Determine styling based on if the timer has run out
+                    const isFaded = isTimeoutFlow && !isCorrectOption;
+                    const isHighlighted = isTimeoutFlow && isCorrectOption;
+
+                    const bgColor = isHighlighted ? '#7ab758' : '#ffffff';
+                    const textColor = isHighlighted ? 'white' : '#333';
+                    const borderColor = isHighlighted ? '#7ab758' : '#ff9900';
+                    const circleColor = isHighlighted ? 'white' : '#ff9900';
+
                     return (
                       <button 
                         key={i} 
                         className="option-button"
-                        onMouseEnter={() => playSound('hover')}
-                        onClick={() => handleOptionSelect(opt)} 
+                        onMouseEnter={() => { if (!isFaded) playSound('hover'); }}
+                        onClick={() => { if (!isFaded) handleOptionSelect(opt); }} 
                         style={{ 
                           display: 'flex', alignItems: 'center', gap: '12px', padding: '15px 20px', 
-                          fontSize: '1.1rem', cursor: 'pointer', borderRadius: '8px', 
-                          backgroundColor: '#ffffff', color: '#333', border: 'none',
-                          borderBottom: '4px solid #ff9900', maxWidth: '350px', 
-                          textAlign: 'left', lineHeight: '1.4' 
+                          fontSize: '1.1rem', borderRadius: '8px', 
+                          backgroundColor: bgColor, color: textColor, border: 'none',
+                          borderBottom: `4px solid ${borderColor}`, maxWidth: '350px', 
+                          textAlign: 'left',
+                          opacity: isFaded ? 0.3 : 1, 
+                          cursor: isFaded ? 'default' : 'pointer',
+                          pointerEvents: isFaded ? 'none' : 'auto', 
+                          transition: 'all 250ms ease' /* 👇 CHANGED: 250ms transition */
                         }}
                       >
                         <span style={{
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           minWidth: '32px', height: '32px', borderRadius: '50%',
-                          border: '2px solid #ff9900', color: '#ff9900', fontWeight: 'bold',
-                          fontSize: '1.1rem', flexShrink: 0
+                          border: `2px solid ${circleColor}`, color: circleColor, fontWeight: 'bold',
+                          fontSize: '1.1rem', flexShrink: 0, 
+                          transition: 'all 250ms ease' /* 👇 CHANGED: 250ms transition */
                         }}>
                           {letter}
                         </span>
@@ -479,7 +1054,7 @@ function Game() {
                 className="standard-button" 
                 onMouseEnter={() => playSound('hover')}
                 onClick={handleContinueToResp2} 
-                style={{ padding: '15px 30px', fontSize: '1.2rem', cursor: 'pointer', borderRadius: '8px', backgroundColor: '#fff', color: 'black', border: 'none', boxShadow: '0 4px 6px rgba(0,0,0,0.3)' }}
+                style={{ padding: '15px 30px', fontSize: '1.2rem', cursor: 'pointer', borderRadius: '8px', backgroundColor: '#fff', color: 'black', border: 'none' }}
               >
                 Continue
               </button>
@@ -490,7 +1065,7 @@ function Game() {
                 className="standard-button" 
                 onMouseEnter={() => playSound('hover')}
                 onClick={handleContinueToInsight} 
-                style={{ padding: '15px 30px', fontSize: '1.2rem', cursor: 'pointer', borderRadius: '8px', backgroundColor: '#fff', color: 'black', border: 'none', boxShadow: '0 4px 6px rgba(0,0,0,0.3)' }}
+                style={{ padding: '15px 30px', fontSize: '1.2rem', cursor: 'pointer', borderRadius: '8px', backgroundColor: '#fff', color: 'black', border: 'none' }}
               >
                 View Insight
               </button>
@@ -501,31 +1076,12 @@ function Game() {
                 className="standard-button" 
                 onMouseEnter={() => playSound('hover')}
                 onClick={handleNextScenario} 
-                style={{ padding: '15px 30px', fontSize: '1.2rem', cursor: 'pointer', borderRadius: '8px', backgroundColor: '#ff9900', color: 'white', border: 'none', boxShadow: '0 4px 6px rgba(0,0,0,0.3)' }}
+                style={{ padding: '15px 30px', fontSize: '1.2rem', cursor: 'pointer', borderRadius: '8px', backgroundColor: '#ff9900', color: 'white', border: 'none' }}
               >
-                Next Scenario
+                {/* 👇 CHANGED: Dynamically fetches "Button Text" from the current Scenario row, falls back to "Next Scenario" if blank */}
+                {getFuzzyKey(scenarios[scenarioRowIndex] || {}, 'Button Text') || 'Next Scenario'}
               </button>
             )}
-
-          </div>
-          
-          <div style={{ position: 'absolute', top: 20, left: 20, zIndex: 10, display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            
-            <div style={{ color: 'white', background: 'rgba(0,0,0,0.5)', padding: '15px', borderRadius: '8px' }}>
-              <p style={{ margin: 0, fontWeight: 'bold' }}>Scenario {displayScenarioText}</p>
-            </div>
-
-            {history.length > 0 && (
-              <button 
-                className="standard-button"
-                onMouseEnter={() => playSound('hover')}
-                onClick={handleBack} 
-                style={{ alignSelf: 'flex-start', padding: '10px 15px', fontSize: '1rem', cursor: 'pointer', borderRadius: '8px', backgroundColor: 'rgba(0,0,0,0.6)', color: 'white', border: '1px solid #555', boxShadow: '0 2px 4px rgba(0,0,0,0.3)' }}
-              >
-                ⬅ Back
-              </button>
-            )}
-
           </div>
         </>
       )}
@@ -535,6 +1091,83 @@ function Game() {
 
 export default function App() {
   const [appState, setAppState] = useState('menu'); 
+  const [isMuted, setIsMuted] = useState(false); 
+  const [isTimerEnabled, setIsTimerEnabled] = useState(true); 
+  
+  // State to hold our spreadsheet copy objects
+  const [uiConfig, setUiConfig] = useState(null); 
+  
+  const menuAudioRef = useRef(null);
+
+  // 👇 UPDATED: Cleanly fetch single-row horizontal CSV data
+  useEffect(() => {
+    const fetchCsv = (url) => new Promise(resolve => {
+      Papa.parse(url + `&t=${Date.now()}`, {
+        download: true, 
+        header: true, 
+        skipEmptyLines: true,
+        // Since headers are in Row 1 and data is in Row 2, results.data[0] is our entire object!
+        complete: (results) => resolve(results.data[0] || {})
+      });
+    });
+
+    Promise.all([fetchCsv(MAIN_MENU_CSV_URL), fetchCsv(TUTORIAL_CSV_URL), fetchCsv(SCORE_CSV_URL)])
+      .then(([mainMenuData, tutorialData, scoreData]) => {
+        setUiConfig({ main: mainMenuData, tutorial: tutorialData, score: scoreData });
+        
+        // Default the timer state based on the spreadsheet config
+        const shouldEnableTimer = String(mainMenuData['Timer']).toUpperCase() === 'TRUE';
+        setIsTimerEnabled(shouldEnableTimer);
+      });
+  }, []);
+
+  // 1. Setup global menu music and wait for a click
+  useEffect(() => {
+    menuAudioRef.current = new Audio(`${import.meta.env.BASE_URL}menu-music.mp3`);
+    menuAudioRef.current.loop = true;
+    menuAudioRef.current.volume = 0.3;
+    menuAudioRef.current.muted = isMuted; 
+
+    const startMenuAudio = () => {
+      if (menuAudioRef.current) {
+        menuAudioRef.current.play().catch(e => console.log("Audio still blocked:", e));
+      }
+      document.removeEventListener('click', startMenuAudio);
+    };
+
+    document.addEventListener('click', startMenuAudio);
+
+    return () => {
+      document.removeEventListener('click', startMenuAudio);
+      if (menuAudioRef.current) {
+        menuAudioRef.current.pause();
+      }
+    };
+  }, []);
+
+  // 2. Stop the menu music when the game actually starts
+  useEffect(() => {
+    if (appState === 'game' && menuAudioRef.current) {
+      menuAudioRef.current.pause();
+    }
+  }, [appState]);
+
+  // 3. Sync the React state with the global SFX flag and Menu Audio
+  useEffect(() => {
+    globalIsMuted = isMuted;
+    if (menuAudioRef.current) {
+      menuAudioRef.current.muted = isMuted;
+    }
+  }, [isMuted]);
+
+  // Block the app from rendering until our copy has loaded
+  if (!uiConfig) {
+    return (
+      <div style={{ width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#111', color: 'white', fontFamily: 'Arial, sans-serif' }}>
+        <h2>Loading...</h2>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -542,39 +1175,46 @@ export default function App() {
         {`
           @font-face {
             font-family: 'Amazon Ember';
-            src: url('/AmazonEmber_Rg.ttf') format('truetype');
+            src: url('${import.meta.env.BASE_URL}AmazonEmber_Rg.ttf') format('truetype');
             font-weight: normal;
             font-style: normal;
           }
-
           * {
             font-family: 'Amazon Ember', Arial, sans-serif !important;
+            line-height: 1.6;
           }
-
-          .option-button {
-            transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1), margin 0.2s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.2s ease !important;
-            margin: 0 8px; 
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
-          }
-          .option-button:hover {
-            transform: scale(1.05);
-            margin: 0 16px; 
-            box-shadow: 0 10px 20px rgba(0,0,0,0.2) !important;
-          }
-
-          .standard-button {
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-          }
-          .standard-button:hover {
-            transform: scale(1.05);
-            box-shadow: 0 6px 12px rgba(0,0,0,0.3) !important;
-          }
+          /* 👇 CHANGED: Merged "all 250ms ease" into the !important rule so colors/opacity can fade */
+          .option-button { transition: all 250ms ease, transform 0.2s cubic-bezier(0.2, 0, 0, 1), margin 0.2s cubic-bezier(0.2, 0, 0, 1) !important; margin: 0 8px; }
+          .option-button:hover { transform: scale(1.05); margin: 0 16px; }
+          .standard-button { transition: transform 0.2s ease; }
+          .standard-button:hover { transform: scale(1.05); }
         `}
       </style>
-      
-      {appState === 'menu' && <MainMenu onStart={() => setAppState('instructions')} />}
-      {appState === 'instructions' && <InstructionsScreen onBegin={() => setAppState('game')} />}
-      {appState === 'game' && <Game />}
+      {appState === 'menu' && <MainMenu onStart={() => setAppState('instructions')} ui={uiConfig.main} />}
+      {appState === 'instructions' && <InstructionsScreen onBegin={() => setAppState('game')} ui={uiConfig.tutorial} />}
+      {appState === 'game' && <Game isMuted={isMuted} isTimerEnabled={isTimerEnabled} ui={uiConfig} />}
+
+      {/* Floating Mute Button */}
+      <button
+        onClick={() => {
+          if (!isMuted) playSound('click');
+          setIsMuted(prev => !prev);
+        }}
+        style={{
+          position: 'fixed', bottom: '20px', right: '20px', zIndex: 1000, width: '50px', height: '50px', borderRadius: '50%',
+          backgroundColor: '#333', color: 'white', border: '2px solid #fff', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'transform 0.2s ease',
+        }}
+        onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.1)'}
+        onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+        title={isMuted ? "Unmute Audio" : "Mute Audio"}
+      >
+        {isMuted ? (
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
+        ) : (
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+        )}
+      </button>
     </>
   );
 }
