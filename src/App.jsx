@@ -7,6 +7,7 @@ const RESPONSE_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRN7Bn
 const MAIN_MENU_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRN7Bn-OFwwB_FiFhDCdqGi5GOG7CpFI9NtRbW8nl3OUV73MwNR2tFTqUg03mj_Pw/pub?gid=19702636&single=true&output=csv';
 const TUTORIAL_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRN7Bn-OFwwB_FiFhDCdqGi5GOG7CpFI9NtRbW8nl3OUV73MwNR2tFTqUg03mj_Pw/pub?gid=402147878&single=true&output=csv';
 const SCORE_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRN7Bn-OFwwB_FiFhDCdqGi5GOG7CpFI9NtRbW8nl3OUV73MwNR2tFTqUg03mj_Pw/pub?gid=279755321&single=true&output=csv';
+const INTRO_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRN7Bn-OFwwB_FiFhDCdqGi5GOG7CpFI9NtRbW8nl3OUV73MwNR2tFTqUg03mj_Pw/pub?gid=1053722439&single=true&output=csv';
 
 // --- SOUND EFFECTS (SFX) CONFIGURATION ---
 const SFX_URLS = {
@@ -71,7 +72,8 @@ function MainMenu({ onStart, ui }) {
   return (
     <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffffff', color: '#333' }}>
       
-      <div style={{ width: '300px', height: '300px' }}>
+      {/* 👇 CHANGED: Reduced height from 300px to 190px to match the 812x506 artboard aspect ratio */}
+      <div style={{ width: '300px', height: '190px', marginBottom: '-20px' }}>
         <LogoRive />
       </div>
 
@@ -109,10 +111,56 @@ function MainMenu({ onStart, ui }) {
   );
 }
 
+// --- 1.2 INTRO / WELCOME SCREEN ---
+function IntroScreen({ onNext, ui }) {
+  return (
+    <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ff9900', backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.2)), url('${import.meta.env.BASE_URL}BackgroundWarehouse.svg')`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', color: '#333', padding: '10px', boxSizing: 'border-box' }}>
+      
+      <div style={{ maxWidth: '700px', width: '100%', backgroundColor: '#ffffff', padding: 'clamp(30px, 5vh, 50px)', borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
+        
+        <h2 style={{ fontSize: 'clamp(2rem, 4vh, 2.8rem)', margin: '0 0 20px 0', color: '#ff9900', lineHeight: '1.2' }}>
+          {ui['Title'] || 'Welcome to the Shift'}
+        </h2>
+        
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', fontSize: 'clamp(1.1rem, 2vh, 1.25rem)', marginBottom: '40px', color: '#555' }}>
+          <p style={{ margin: 0 }}>
+            {ui['Text 1'] || "In this simulation, you will step into the shoes of a shift lead managing a busy fulfillment center."}
+          </p>
+          <p style={{ margin: 0 }}>
+            {ui['Text 2'] || "You will face 10 realistic scenarios. For each one, you must choose the best response from the multiple-choice options provided."}
+          </p>
+          <p style={{ margin: 0 }}>
+            {ui['Text 3'] || "Keep an eye on the timer! Some choices require quick thinking. Your decisions will directly impact your team's trust, clarity, and overall performance."}
+          </p>
+        </div>
+
+        <button 
+          className="standard-button" 
+          onMouseEnter={() => playSound('hover')}
+          onClick={() => { playSound('click'); onNext(); }} 
+          style={{ padding: '15px 40px', fontSize: '1.2rem', cursor: 'pointer', backgroundColor: '#ff9900', color: 'white', borderRadius: '8px', border: 'none', fontWeight: 'bold' }}
+        >
+          {ui['Button Text'] || "View Scoring Guide"}
+        </button>
+        
+      </div>
+    </div>
+  );
+}
+
 // --- 1.5 INSTRUCTIONS SCREEN ---
 function InstructionsScreen({ onBegin, ui }) {
   return (
-    <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ff9900', color: '#333', padding: '10px', boxSizing: 'border-box' }}>
+    <div style={{ 
+      width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', 
+      color: '#333', padding: '10px', boxSizing: 'border-box',
+      backgroundColor: '#ff9900',
+      /* 👇 CHANGED: Added a 20% black linear-gradient directly over the background image */
+      backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.2)), url('${import.meta.env.BASE_URL}BackgroundWarehouse.svg')`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+      backgroundRepeat: 'no-repeat'
+    }}>
       
       <div style={{ maxWidth: '800px', width: '100%', maxHeight: '95vh', overflowY: 'auto', backgroundColor: '#ffffff', padding: 'clamp(20px, 4vh, 40px)', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
         
@@ -913,9 +961,10 @@ function Game({ isMuted, isTimerEnabled, ui }) {
       {gamePhase === 'end_screen' && (
         <div style={{ position: 'absolute', inset: 0, zIndex: 100, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffffff', color: '#333' }}>
           
-          <div style={{ width: '150px', height: '150px', marginBottom: '10px' }}>
-            <LogoRive />
-          </div>
+          
+      <div style={{ width: '300px', height: '190px', marginBottom: '-20px' }}>
+        <LogoRive />
+      </div>
 
           <h1 style={{ fontSize: '4rem', margin: '0 0 30px 0', lineHeight: '1.2' }}>{scoreUi['Title'] || 'Shift Complete!'}</h1>
           
@@ -996,16 +1045,16 @@ function Game({ isMuted, isTimerEnabled, ui }) {
                   </div>
                 )}
                 
-                <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', alignItems: 'center' }}>
+                {/* 👇 CHANGED: alignItems switched from 'center' to 'stretch' for equal heights */}
+            
+                <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', alignItems: 'stretch', width: '100%', maxWidth: '1200px' }}>
                   {currentOptions.map((opt, i) => {
                     const letter = String.fromCharCode(65 + i); 
                     
-                    // 👇 NEW: Check if this specific option is the correct one (50 points)
                     const rawPoints = getFuzzyKey(opt, 'Points') || '0';
                     const ptsMatch = String(rawPoints).match(/-?\d+/);
                     const isCorrectOption = ptsMatch && parseInt(ptsMatch[0], 10) === 50;
                     
-                    // 👇 NEW: Determine styling based on if the timer has run out
                     const isFaded = isTimeoutFlow && !isCorrectOption;
                     const isHighlighted = isTimeoutFlow && isCorrectOption;
 
@@ -1024,12 +1073,14 @@ function Game({ isMuted, isTimerEnabled, ui }) {
                           display: 'flex', alignItems: 'center', gap: '12px', padding: '15px 20px', 
                           fontSize: '1.1rem', borderRadius: '8px', 
                           backgroundColor: bgColor, color: textColor, border: 'none',
-                          borderBottom: `4px solid ${borderColor}`, maxWidth: '350px', 
+                          borderBottom: `4px solid ${borderColor}`, 
+                          /* 👇 CHANGED: Swapped rigid width for responsive flex properties */
+                          flex: '1 1 250px', maxWidth: '350px', 
                           textAlign: 'left',
                           opacity: isFaded ? 0.3 : 1, 
                           cursor: isFaded ? 'default' : 'pointer',
                           pointerEvents: isFaded ? 'none' : 'auto', 
-                          transition: 'all 250ms ease' /* 👇 CHANGED: 250ms transition */
+                          transition: 'all 250ms ease'
                         }}
                       >
                         <span style={{
@@ -1037,7 +1088,7 @@ function Game({ isMuted, isTimerEnabled, ui }) {
                           minWidth: '32px', height: '32px', borderRadius: '50%',
                           border: `2px solid ${circleColor}`, color: circleColor, fontWeight: 'bold',
                           fontSize: '1.1rem', flexShrink: 0, 
-                          transition: 'all 250ms ease' /* 👇 CHANGED: 250ms transition */
+                          transition: 'all 250ms ease'
                         }}>
                           {letter}
                         </span>
@@ -1099,50 +1150,32 @@ export default function App() {
   
   const menuAudioRef = useRef(null);
 
-  // 👇 UPDATED: Cleanly fetch single-row horizontal CSV data
+  // DATA FETCHING FOR ALL UI SHEETS
   useEffect(() => {
     const fetchCsv = (url) => new Promise(resolve => {
+      // 👇 CHANGED: Removed the hardcoded URL block so it actually fetches your sheet!
+      if (!url) return resolve({}); 
+      
       Papa.parse(url + `&t=${Date.now()}`, {
         download: true, 
         header: true, 
         skipEmptyLines: true,
-        // Since headers are in Row 1 and data is in Row 2, results.data[0] is our entire object!
         complete: (results) => resolve(results.data[0] || {})
       });
     });
 
-    Promise.all([fetchCsv(MAIN_MENU_CSV_URL), fetchCsv(TUTORIAL_CSV_URL), fetchCsv(SCORE_CSV_URL)])
-      .then(([mainMenuData, tutorialData, scoreData]) => {
-        setUiConfig({ main: mainMenuData, tutorial: tutorialData, score: scoreData });
+    Promise.all([
+      fetchCsv(MAIN_MENU_CSV_URL), 
+      fetchCsv(INTRO_CSV_URL), 
+      fetchCsv(TUTORIAL_CSV_URL), 
+      fetchCsv(SCORE_CSV_URL)
+    ])
+      .then(([mainMenuData, introData, tutorialData, scoreData]) => {
+        setUiConfig({ main: mainMenuData, intro: introData, tutorial: tutorialData, score: scoreData });
         
-        // Default the timer state based on the spreadsheet config
         const shouldEnableTimer = String(mainMenuData['Timer']).toUpperCase() === 'TRUE';
         setIsTimerEnabled(shouldEnableTimer);
       });
-  }, []);
-
-  // 1. Setup global menu music and wait for a click
-  useEffect(() => {
-    menuAudioRef.current = new Audio(`${import.meta.env.BASE_URL}menu-music.mp3`);
-    menuAudioRef.current.loop = true;
-    menuAudioRef.current.volume = 0.3;
-    menuAudioRef.current.muted = isMuted; 
-
-    const startMenuAudio = () => {
-      if (menuAudioRef.current) {
-        menuAudioRef.current.play().catch(e => console.log("Audio still blocked:", e));
-      }
-      document.removeEventListener('click', startMenuAudio);
-    };
-
-    document.addEventListener('click', startMenuAudio);
-
-    return () => {
-      document.removeEventListener('click', startMenuAudio);
-      if (menuAudioRef.current) {
-        menuAudioRef.current.pause();
-      }
-    };
   }, []);
 
   // 2. Stop the menu music when the game actually starts
@@ -1190,7 +1223,8 @@ export default function App() {
           .standard-button:hover { transform: scale(1.05); }
         `}
       </style>
-      {appState === 'menu' && <MainMenu onStart={() => setAppState('instructions')} ui={uiConfig.main} />}
+      {appState === 'menu' && <MainMenu onStart={() => setAppState('intro')} ui={uiConfig.main} />}
+      {appState === 'intro' && <IntroScreen onNext={() => setAppState('instructions')} ui={uiConfig.intro} />}
       {appState === 'instructions' && <InstructionsScreen onBegin={() => setAppState('game')} ui={uiConfig.tutorial} />}
       {appState === 'game' && <Game isMuted={isMuted} isTimerEnabled={isTimerEnabled} ui={uiConfig} />}
 
